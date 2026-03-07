@@ -32,36 +32,43 @@ This project demonstrates four key agentic design patterns from the [DeepLearnin
 
 ```mermaid
 flowchart TD
-    subgraph External["External Services"]
-        Siyuan[("🗃️ Siyuan Notes API")]
-        Anki[("📚 AnkiConnect API")]
+    subgraph External["🔌 External Services"]
+        Siyuan[(Siyuan Notes)]
+        Anki[(AnkiConnect)]
     end
 
-    subgraph Agents["Multi-Agent System"]
-        KM["🎯 Knowledge_Manager<br/><i>Orchestrator</i>"]
+    subgraph Pipeline["🤖 Multi-Agent Pipeline"]
+        KM[Knowledge_Manager<br/>Orchestrator]
         
-        subgraph Reflection["Reflection Loop"]
-            CW["✍️ Card_Writer<br/><i>Drafts cards</i>"]
-            CR["🔍 Card_Reviewer<br/><i>Validates quality</i>"]
+        subgraph Reflection["🔄 Reflection Loop"]
+            CW[Card_Writer<br/>Drafts cards]
+            CR[Card_Reviewer<br/>Validates quality]
         end
         
-        Admin["👤 Admin<br/><i>Human approval</i>"]
+        Admin[/Admin<br/>Human Review/]
     end
 
-    User((User Request)) --> KM
-    KM -->|"fetch_siyuan_notes()"| Siyuan
-    Siyuan -.->|"Note content"| KM
+    User((User)) --> KM
+    KM -- "fetch_siyuan_notes()" --> Siyuan
+    Siyuan -. "markdown content" .-> KM
     KM --> CW
-    CW -->|"Draft cards"| CR
-    CR -->|"❌ REJECTED"| CW
-    CR -->|"✅ APPROVED"| Admin
-    Admin -->|"✅ APPROVE"| KM
-    KM -->|"push_to_anki()"| Anki
-    KM --> Terminate([TERMINATE])
+    CW --> CR
+    CR -- "REJECTED" --> CW
+    CR -- "APPROVED" --> Admin
+    Admin -- "REJECT" --> CW
+    Admin -- "APPROVE" --> KM
+    KM -- "push_to_anki()" --> Anki
+    KM --> Done([TERMINATE])
 
-    style Reflection fill:#e8f4e8,stroke:#2e7d32
-    style External fill:#e3f2fd,stroke:#1565c0
-    style Admin fill:#fff3e0,stroke:#ef6c00
+    style Pipeline fill:#1a1a2e,stroke:#4a4a6a,color:#fff
+    style Reflection fill:#16213e,stroke:#0f3460,color:#fff
+    style External fill:#0f3460,stroke:#1a1a2e,color:#fff
+    style KM fill:#4a4a6a,stroke:#6a6a8a,color:#fff
+    style CW fill:#2d4a3e,stroke:#3d6a5e,color:#fff
+    style CR fill:#2d4a3e,stroke:#3d6a5e,color:#fff
+    style Admin fill:#4a3a2a,stroke:#6a5a4a,color:#fff
+    style Siyuan fill:#1a3a5a,stroke:#2a5a8a,color:#fff
+    style Anki fill:#1a3a5a,stroke:#2a5a8a,color:#fff
 ```
 
 **Key Flow:**
