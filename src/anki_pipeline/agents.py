@@ -18,74 +18,70 @@ from autogen_agentchat.base import ChatAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from .config import config
-from .tools import fetch_siyuan_notes, push_to_anki
+from .tools import fetch_siyuan_notes, push_cards_batch
 
 # System prompts following best practices for instruction clarity
-KNOWLEDGE_MANAGER_PROMPT = """You are the orchestrator of a flashcard creation pipeline.
+KNOWLEDGE_MANAGER_PROMPT = """You orchestrate a flashcard creation pipeline.
 
-Your responsibilities:
-1. When the user requests notes, call fetch_siyuan_notes with the provided block ID.
-2. Pass the fetched content to the Card_Writer for processing.
-3. ONLY call push_to_anki after the Admin explicitly says 'APPROVE'.
-4. After successfully pushing all cards, output TERMINATE to end the session.
+IF content is already provided in the message:
+- Simply acknowledge and let Card_Writer create the flashcards.
 
-Important: Never push cards without human approval."""
+IF you need to fetch content:
+- Use the fetch_siyuan_notes tool with the block ID.
+
+AFTER Admin says 'APPROVE':
+- Use push_cards_batch tool with the JSON cards from Card_Writer.
+- Then say TERMINATE.
+
+IMPORTANT: When calling tools, use the proper tool calling mechanism."""
 
 CARD_WRITER_PROMPT = """You are an expert at creating effective Anki flashcards.
 
 Follow the Minimum Information Principle (SuperMemo's 20 Rules):
-1. ATOMIC: Each card's back must contain exactly ONE fact.
-2. CONCISE: Use minimal words while preserving meaning.
-3. NO SETS: Never ask for lists of items - split into separate cards.
-4. CLOZE DELETIONS: Use [...] for fill-in-the-blank when appropriate.
+1. ATOMIC: Each card tests exactly ONE fact
+2. CONCISE: Short question, short answer (1-5 words ideal)
+3. NO LISTS: Never ask "What are the types of X?" - make separate cards
+4. CLEAR: Question should have ONE obvious answer
 
-BAD EXAMPLE:
-  Front: What do we know about dog domestication?
-  Back: Dogs were domesticated 15,000-30,000 years ago, making them the first domesticated species.
+EXAMPLES:
+  Good: Front: "What is a CDN?" Back: "Distributed proxy server network"
+  Good: Front: "CDN stands for [...]" Back: "Content Delivery Network"
+  Bad:  Front: "What are CDN benefits?" Back: "Faster delivery, reduced server load"
 
-GOOD EXAMPLES:
-  Front: Dogs were domesticated between [...] and 30,000 years ago.
-  Back: 15,000
+Create 5-10 high-quality cards covering the key concepts.
 
-  Front: What was the first species domesticated by humans?
-  Back: Dogs
-
-Output your flashcards as JSON in this exact format:
-{"cards": [{"front": "question", "back": "answer"}, ...]}
-
-Respond with ONLY the JSON, no other text."""
+Output ONLY valid JSON:
+{"cards": [{"front": "...", "back": "..."}, ...]}"""
 
 CARD_REVIEWER_PROMPT = """You are a quality reviewer for Anki flashcards.
 
-A GOOD card follows the Minimum Information Principle:
-- The BACK contains exactly ONE atomic fact (a single word, number, or short phrase)
-- Example GOOD back: "Dogs" or "15,000 years ago" or "mitochondria"
-- Example BAD back: "Dogs were domesticated 15,000 years ago and were the first species"
+Quickly check each card:
+1. Back has ONE short answer (1-5 words)? PASS
+2. Front asks for a list? FAIL
+3. Contains markup artifacts like {id=...}? FAIL
 
-Check each card:
-1. Is the back a SINGLE atomic answer? If yes = PASS
-2. Does the front ask for a list? If yes = FAIL (split into separate cards)
-3. Are there formatting artifacts like {#id} or markdown? If yes = FAIL
-
-If ALL cards PASS, respond with exactly: APPROVED
-If ANY card FAILS, explain which card failed and why, then say: REJECTED"""
+If ALL cards pass: Reply with just "APPROVED"
+If ANY fail: Reply "REJECTED" then list fixes needed (be brief)"""
 
 
 def create_model_client() -> OpenAIChatCompletionClient:
     """Create the LLM client configured for the local inference server."""
+    # Detect if using Gemini API (for demo with better responses)
+    is_gemini = "generativelanguage.googleapis.com" in config.LLM_BASE_URL
+    
     return OpenAIChatCompletionClient(
         model=config.LLM_MODEL_ID,
         base_url=config.LLM_BASE_URL,
         api_key=config.LLM_API_KEY,
         model_info={
-            "json_output": False,  # Small models may struggle with strict JSON
+            "json_output": is_gemini,  # Gemini handles JSON well
             "vision": False,
             "function_calling": True,
-            "structured_output": False,  # Ollama doesn't support native structured output
+            "structured_output": is_gemini,
             "family": "unknown",
         },
         # Disable qwen3.5 "thinking mode" for faster responses
-        extra_create_args={"options": {"num_ctx": 4096}},
+        extra_create_args={"options": {"num_ctx": 4096}} if not is_gemini else {},
     )
 
 
@@ -95,7 +91,7 @@ def create_agents(model_client: OpenAIChatCompletionClient) -> dict[str, ChatAge
         "knowledge_manager": AssistantAgent(
             name="Knowledge_Manager",
             model_client=model_client,
-            tools=[fetch_siyuan_notes, push_to_anki],
+            tools=[fetch_siyuan_notes, push_cards_batch],
             system_message=KNOWLEDGE_MANAGER_PROMPT,
         ),
         "card_writer": AssistantAgent(
@@ -113,17 +109,7 @@ def create_agents(model_client: OpenAIChatCompletionClient) -> dict[str, ChatAge
         "admin": UserProxyAgent(
             name="Admin",
             description="Human reviewer who approves flashcards before saving.",
-            input_func=lambda prompt: input(
-                "\n" + "="*50 + "\n"
-                "🎴 HUMAN REVIEW REQUIRED\n"
-                "="*50 + "\n"
-                "Options:\n"
-                "  • APPROVE - Save cards to Anki\n"
-                "  • REJECT  - Send back for revision\n"
-                "  • (or type feedback for the Card_Writer)\n"
-                "="*50 + "\n"
-                "Your decision: "
-            ),
+            input_func=lambda prompt: input("\n[APPROVE/REJECT/feedback] >>> "),
         ),
     }
 

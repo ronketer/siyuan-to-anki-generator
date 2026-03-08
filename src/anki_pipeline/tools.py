@@ -6,11 +6,28 @@ function schemas for the LLM.
 """
 
 import json
+import re
 from typing import Annotated
 
 import requests
 
 from .config import config
+
+
+def _clean_kramdown(kramdown: str) -> str:
+    """Remove Siyuan metadata from kramdown for cleaner display."""
+    # Remove block IDs like {: id="..." updated="..."}
+    cleaned = re.sub(r'\{:\s*id="[^"]+"[^}]*\}', '', kramdown)
+    # Remove {: updated="..." id="..."} variations
+    cleaned = re.sub(r'\{:\s*updated="[^"]+"[^}]*\}', '', cleaned)
+    # Remove {{{row and }}} wrappers
+    cleaned = re.sub(r'\{\{\{row\n?', '', cleaned)
+    cleaned = re.sub(r'\}\}\}', '', cleaned)
+    # Remove list item IDs like {: id="..."}
+    cleaned = re.sub(r'\s*\{:\s*[^}]+\}', '', cleaned)
+    # Clean up excessive blank lines
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
 
 
 def fetch_siyuan_notes(
@@ -36,6 +53,9 @@ def fetch_siyuan_notes(
 
         if response_data.get("code") == 0:
             data = response_data.get("data", {})
+            # Clean the kramdown content for better readability
+            if "kramdown" in data:
+                data["kramdown"] = _clean_kramdown(data["kramdown"])
             return json.dumps(data, indent=2, ensure_ascii=False)
         return f"Siyuan Error: {response_data.get('msg')}"
     except requests.exceptions.ConnectionError:
@@ -48,10 +68,7 @@ def push_to_anki(
     front_text: Annotated[str, "The text for the front of the flashcard."],
     back_text: Annotated[str, "The text for the back of the flashcard."],
 ) -> str:
-    """Push a flashcard to Anki via the AnkiConnect API.
-
-    Cards are added to the configured deck with duplicate prevention enabled.
-    """
+    """Push a single flashcard to Anki via the AnkiConnect API."""
     payload = {
         "action": "addNote",
         "version": 6,
@@ -70,9 +87,41 @@ def push_to_anki(
         response_data = response.json()
 
         if response.status_code == 200 and response_data.get("error") is None:
-            return f"Card added successfully with ID: {response_data['result']}"
-        return f"Failed to add card: {response_data.get('error', 'Unknown error')}"
+            return f"Card added: {response_data['result']}"
+        return f"Failed: {response_data.get('error', 'Unknown')}"
     except requests.exceptions.ConnectionError:
-        return "Error: Cannot connect to Anki. Is AnkiConnect running?"
+        return "Error: Anki not running"
     except Exception as e:
-        return f"Error pushing to Anki: {str(e)}"
+        return f"Error: {str(e)}"
+
+
+def push_cards_batch(
+    cards_json: Annotated[
+        str,
+        'JSON string: {"cards": [{"front": "...", "back": "..."}]}'
+    ],
+) -> str:
+    """Push multiple flashcards to Anki in one batch.
+    
+    Use this to save all approved cards at once.
+    """
+    import json as json_module
+    
+    try:
+        data = json_module.loads(cards_json)
+        cards = data.get('cards', [])
+    except json_module.JSONDecodeError:
+        return "Error: Invalid JSON"
+    
+    if not cards:
+        return "Error: No cards found in JSON"
+    
+    results = []
+    for i, card in enumerate(cards, 1):
+        front = card.get('front', card.get('question', ''))
+        back = card.get('back', card.get('answer', ''))
+        if front and back:
+            result = push_to_anki(front, back)
+            results.append(f"Card {i}: {result}")
+    
+    return f"Saved {len(results)} cards:\n" + "\n".join(results)
