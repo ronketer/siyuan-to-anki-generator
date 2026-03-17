@@ -211,7 +211,3 @@ LLM_MODEL_ID=your-model-name
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-Built with the [AI Agentic Design Patterns with AutoGen](https://www.deeplearning.ai/short-courses/ai-agentic-design-patterns-with-autogen/) course from DeepLearning.AI
