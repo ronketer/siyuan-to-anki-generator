@@ -91,7 +91,7 @@ flowchart TD
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Autonomous-Local-Knowledge-to-Anki-Pipeline.git
+git clone https://github.com/ronketer/Autonomous-Local-Knowledge-to-Anki-Pipeline.git
 cd Autonomous-Local-Knowledge-to-Anki-Pipeline
 
 # Create virtual environment (using uv)
