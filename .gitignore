@@ -47,9 +47,3 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
-
-# Project-specific
-feedback.md
-job_descriptions.md
-plan.md
-question.md
